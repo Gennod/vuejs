@@ -1,3 +1,4 @@
+<!-- eslint-disable vue/no-parsing-error -->
 <template>
   <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
     <div class="container">
@@ -10,8 +11,8 @@
             >
             <div class="mt-1 relative rounded-md shadow-md">
               <input
-                v-model="ticker"
                 @keydown.enter="add"
+                v-model="ticker"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -49,7 +50,10 @@
           <div
             v-for="t in tickers"
             :key="t.name"
-            @click="sel = t"
+            @click="select(t)"
+            :class="{
+              'border-4': selected === t
+            }"
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
             <div class="px-4 py-5 sm:p-6 text-center">
@@ -62,7 +66,7 @@
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-              @click="handleDelete(t)"
+              @click="remove(t)"
               class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
@@ -83,21 +87,21 @@
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
       </template>
-      <section class="relative">
+      <section v-if="selected" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          VUE - USD
+          {{ selected.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
-          <div class="bg-purple-800 border w-10 h-24"></div>
-          <div class="bg-purple-800 border w-10 h-32"></div>
-          <div class="bg-purple-800 border w-10 h-48"></div>
-          <div class="bg-purple-800 border w-10 h-16"></div>
+          <div
+            v-for="(bar, idx) in normalizeGraph()"
+            :key="idx"
+            :style="{
+              height: `${bar}%`
+            }"
+            class="bg-purple-800 border w-10"
+          ></div>
         </div>
-        <button
-          @click="sel = null"
-          type="button"
-          class="absolute top-0 right-0"
-        >
+        <button type="button" class="absolute top-0 right-0">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -131,28 +135,52 @@ export default {
 
   data() {
     return {
-      ticker: "default",
-      tickers: [
-        { name: "DEMO1", price: "-" },
-        { name: "DEMO2", price: "2" },
-        { name: "DEMO3", price: "-" }
-      ]
+      ticker: "",
+      tickers: [],
+      selected: null,
+      graph: []
     };
   },
 
   methods: {
     add() {
-      const newTicker = {
-        name: this.ticker,
-        price: "-"
-      };
+      const tickerToAdd = { name: this.ticker, price: "-" };
 
-      this.tickers.push(newTicker);
+      this.tickers.push(tickerToAdd);
+
+      setInterval(async () => {
+        const f = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerToAdd.name}&tsyms=USD&api_key=996279825ce6848399e0701d6cd402bc0e04da6e3aeee171f6e8a13f48e56fd1`
+        );
+
+        const data = await f.json();
+
+        this.tickers.find(t => tickerToAdd.name === t.name).price =
+          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+
+        if (this.selected?.name === tickerToAdd.name) {
+          this.graph.push(data.USD);
+        }
+      }, 5000);
+
       this.ticker = "";
     },
-
-    handleDelete(tickerToRemove) {
+    remove(tickerToRemove) {
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+    },
+
+    select(ticker) {
+      this.selected = ticker;
+      this.graph = [];
+    },
+
+    normalizeGraph() {
+      const minBar = Math.min(...this.graph);
+      const maxBar = Math.max(...this.graph);
+
+      return this.graph.map(
+        price => 5 + ((price - minBar) * 95) / (maxBar - minBar)
+      );
     }
   }
 };
