@@ -13,12 +13,32 @@
               <input
                 @keydown.enter="add"
                 v-model="ticker"
+                @input="onInput"
                 type="text"
                 name="wallet"
                 id="wallet"
                 class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
                 placeholder="Например DOGE"
               />
+              <div v-if="ticker" class="grid grid-cols-4 gap-x-1 p-1">
+                <button
+                  v-for="coin in filteredCoins"
+                  @click="
+                    ticker = coin;
+                    add();
+                  "
+                  :key="coin"
+                  class="bg-gray-400 rounded-lg w-full mt-1"
+                >
+                  {{ coin.slice(0, 4) }}
+                </button>
+              </div>
+            </div>
+            <div v-if="coinExist" class="text-red-600">
+              Данный тикер уже добавлен!
+            </div>
+            <div v-if="coinUndefined" class="text-red-600">
+              Данный тикер не найден!
             </div>
           </div>
         </div>
@@ -66,7 +86,7 @@
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-              @click="remove(t)"
+              @click.stop="remove(t)"
               class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
@@ -101,7 +121,11 @@
             class="bg-purple-800 border w-10"
           ></div>
         </div>
-        <button type="button" class="absolute top-0 right-0">
+        <button
+          @click="selected = null"
+          type="button"
+          class="absolute top-0 right-0"
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -138,35 +162,78 @@ export default {
       ticker: "",
       tickers: [],
       selected: null,
-      graph: []
+      graph: [],
+      coins: [],
+      coinExist: false,
+      coinUndefined: false
     };
+  },
+
+  computed: {
+    filteredCoins: function() {
+      return this.coins
+        .filter(coin => coin.toUpperCase().includes(this.ticker.toUpperCase()))
+        .sort()
+        .splice(0, 4);
+    }
+  },
+
+  mounted: async function() {
+    const tickersData = localStorage.getItem("cryptonomicon-list");
+
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach(ticker => {
+        this.subscribeToUpdates(ticker.name);
+      });
+    }
+
+    const request = await fetch(
+      "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
+    );
+
+    const result = await request.json();
+
+    for (let coin in result.Data) {
+      this.coins.push(coin);
+    }
   },
 
   methods: {
     add() {
-      const tickerToAdd = { name: this.ticker, price: "-" };
+      if (this.ticker == "") {
+        return;
+      }
+
+      const tickerToAdd = { name: this.ticker.toUpperCase(), price: "-" };
+
+      if (this.tickers.find(ticker => ticker.name === tickerToAdd.name)) {
+        this.coinExist = true;
+        this.coinUndefined = false;
+        return;
+      }
+
+      if (!this.coins.find(coin => coin === tickerToAdd.name)) {
+        this.coinExist = false;
+        this.coinUndefined = true;
+        return;
+      }
 
       this.tickers.push(tickerToAdd);
 
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerToAdd.name}&tsyms=USD&api_key=996279825ce6848399e0701d6cd402bc0e04da6e3aeee171f6e8a13f48e56fd1`
-        );
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
 
-        const data = await f.json();
-
-        this.tickers.find(t => tickerToAdd.name === t.name).price =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-        if (this.selected?.name === tickerToAdd.name) {
-          this.graph.push(data.USD);
-        }
-      }, 5000);
+      this.subscribeToUpdates(tickerToAdd.name);
 
       this.ticker = "";
     },
     remove(tickerToRemove) {
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+      this.selected = null;
+
+      console.log(tickerToRemove);
+
+      localStorage.removeItem(tickerToRemove);
     },
 
     select(ticker) {
@@ -181,6 +248,28 @@ export default {
       return this.graph.map(
         price => 5 + ((price - minBar) * 95) / (maxBar - minBar)
       );
+    },
+
+    onInput() {
+      this.coinExist = false;
+      this.coinUndefined = false;
+    },
+
+    subscribeToUpdates(tickerName) {
+      setInterval(async () => {
+        const f = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=996279825ce6848399e0701d6cd402bc0e04da6e3aeee171f6e8a13f48e56fd1`
+        );
+
+        const data = await f.json();
+
+        this.tickers.find(t => tickerName === t.name).price =
+          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+
+        if (this.selected?.name === tickerName) {
+          this.graph.push(data.USD);
+        }
+      }, 5000);
     }
   }
 };
